@@ -1,0 +1,2 @@
+# kjobot
+KJO Trading Bot
