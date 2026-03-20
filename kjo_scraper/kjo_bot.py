@@ -1210,19 +1210,24 @@ def analyze_pair(symbol, tf='4h'):
             bias = 'BEARISH'
             confidence = round(bear_score / (bull_score + bear_score) * 100)
         
-        # ---- TP/SL (KJO style) ----
+        # ---- TP/SL (KJO style — SL minimum 2.5%) ----
+        MIN_SL_PCT = 0.025  # 2.5% minimum SL kayak KJO asli
         if bias == 'BULLISH':
-            nearest_support = max([s for s in supports if s < curr_price], default=curr_price * 0.97)
-            sl = nearest_support * 0.99
+            nearest_support = max([s for s in supports if s < curr_price], default=curr_price * 0.975)
+            sl_dynamic = nearest_support * 0.99
+            sl_min = curr_price * (1 - MIN_SL_PCT)
+            sl = min(sl_dynamic, sl_min)  # pilih yang lebih rendah (lebih aman)
             tp1 = curr_price + (atr * 1.5)
             tp2 = curr_price + (atr * 3)
-            tp3 = max(resistances) if resistances else curr_price + (atr * 5)  # TP3 = highest resistance
+            tp3 = max(resistances) if resistances else curr_price + (atr * 5)
         else:
-            nearest_resistance = min([r for r in resistances if r > curr_price], default=curr_price * 1.03)
-            sl = nearest_resistance * 1.01
+            nearest_resistance = min([r for r in resistances if r > curr_price], default=curr_price * 1.025)
+            sl_dynamic = nearest_resistance * 1.01
+            sl_min = curr_price * (1 + MIN_SL_PCT)
+            sl = max(sl_dynamic, sl_min)  # pilih yang lebih tinggi (lebih aman)
             tp1 = curr_price - (atr * 1.5)
             tp2 = curr_price - (atr * 3)
-            tp3 = min(supports) if supports else curr_price - (atr * 5)  # TP3 = lowest support
+            tp3 = min(supports) if supports else curr_price - (atr * 5)
         
         return {
             'symbol': symbol,
