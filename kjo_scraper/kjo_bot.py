@@ -22,7 +22,7 @@ import json
 from datetime import datetime
 
 # ==================== CONFIG ====================
-TELEGRAM_BOT_TOKEN = "8530174420:AAHZHFzEjfntEgIVeKGHEo22QbGZt346wCU"
+TELEGRAM_BOT_TOKEN = "8099113405:AAFrVLJIULOgyTh0WFAdEA0bkWmRFdihmJY"
 TELEGRAM_CHAT_ID = "1603606771"  # Chat ID MK
 
 SCAN_INTERVAL = 60   # cek tiap 1 menit, tapi scan hanya di candle close
