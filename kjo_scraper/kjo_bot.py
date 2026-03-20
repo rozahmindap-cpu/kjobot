@@ -885,6 +885,42 @@ def get_market_sentiment(symbol):
     except Exception as e:
         result['warnings'].append(f"📊 OI: N/A")
 
+    # ---- Long/Short Ratio ----
+    try:
+        resp_ls = requests.get(
+            'https://fapi.binance.com/futures/data/globalLongShortAccountRatio',
+            params={'symbol': base, 'period': '1h', 'limit': 1},
+            timeout=8
+        )
+        ls_data = resp_ls.json()
+        if ls_data and len(ls_data) > 0:
+            long_ratio = float(ls_data[0].get('longAccount', 0.5)) * 100
+            short_ratio = 100 - long_ratio
+
+            if long_ratio > 70:
+                result['warnings'].append(
+                    f"🔴 L/S Ratio: {long_ratio:.0f}% Long / {short_ratio:.0f}% Short (EXTREME LONG — rawan liquidasi!)"
+                )
+                result['level'] = 'danger'
+            elif long_ratio > 60:
+                result['warnings'].append(
+                    f"🟡 L/S Ratio: {long_ratio:.0f}% Long / {short_ratio:.0f}% Short (Banyak long — waspadai reversal)"
+                )
+                if result['level'] == 'clean':
+                    result['level'] = 'caution'
+            elif short_ratio > 65:
+                result['warnings'].append(
+                    f"🟡 L/S Ratio: {long_ratio:.0f}% Long / {short_ratio:.0f}% Short (Banyak short — potensi squeeze)"
+                )
+                if result['level'] == 'clean':
+                    result['level'] = 'caution'
+            else:
+                result['warnings'].append(
+                    f"🟢 L/S Ratio: {long_ratio:.0f}% Long / {short_ratio:.0f}% Short (Balanced)"
+                )
+    except Exception:
+        result['warnings'].append("👥 L/S Ratio: N/A")
+
     return result
 
 
