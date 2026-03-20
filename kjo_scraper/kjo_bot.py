@@ -25,8 +25,13 @@ from datetime import datetime
 TELEGRAM_BOT_TOKEN = "8530174420:AAHZHFzEjfntEgIVeKGHEo22QbGZt346wCU"
 TELEGRAM_CHAT_ID = "1603606771"  # Chat ID MK
 
-SCAN_INTERVAL = 900  # 15 menit
+SCAN_INTERVAL = 60   # cek tiap 1 menit, tapi scan hanya di candle close
 SIGNAL_COOLDOWN = 14400  # 4 jam per pair (biar ga spam)
+
+# Jam close candle 4H (WIB = UTC+7)
+# Binance 4H candle close: 01:00, 05:00, 09:00, 13:00, 17:00, 21:00 WIB
+CANDLE_4H_CLOSE_HOURS_WIB = [1, 5, 9, 13, 17, 21]
+SCAN_WINDOW_MINUTES = 5  # scan dalam 5 menit pertama setelah candle close
 
 # Coins KJO sering analisa (dari playbook)
 WATCHLIST = [
@@ -1294,6 +1299,65 @@ def format_signal(result, macro, weekly=None, sentiment=None):
 
 # ==================== SCAN ====================
 
+def is_4h_candle_close():
+    """Cek apakah sekarang dalam window 5 menit setelah 4H candle close"""
+    now = datetime.now()  # WIB (server time)
+    return (now.hour in CANDLE_4H_CLOSE_HOURS_WIB and 
+            now.minute < SCAN_WINDOW_MINUTES)
+
+
+def send_market_update_per_pair(symbol, result, weekly, macro):
+    """
+    Kirim market update kondisi terkini per pair.
+    Bukan signal entry — hanya laporan bias & level penting.
+    """
+    sym = symbol.replace('/USDT', '')
+    bias = result.get('bias', 'NEUTRAL')
+    price = result.get('price', 0)
+    conf = result.get('confidence', 0)
+    ms = result.get('market_structure', '')
+
+    if bias == 'BULLISH':
+        bias_emoji = '📈'
+    elif bias == 'BEARISH':
+        bias_emoji = '📉'
+    else:
+        bias_emoji = '➡️'
+
+    weekly_bias = weekly.get('bias', 'NEUTRAL') if weekly else 'N/A'
+
+    # Key levels
+    sl = result.get('sl', 0)
+    tp1 = result.get('tp1', 0)
+    entry = result.get('entry', 0)
+
+    zones_text = ''
+    if result.get('zones'):
+        zones_text = '\n' + '\n'.join(result['zones'][:2])
+
+    msg = f"""
+📊 <b>4H UPDATE — {sym}/USDT</b>
+━━━━━━━━━━━━━━━━━━━━━━
+
+{bias_emoji} <b>Bias:</b> {bias} ({conf}%)
+💰 <b>Price:</b> ${price:,.4f}
+🏗️ <b>Structure:</b> {ms}
+📅 <b>Weekly:</b> {weekly_bias}
+
+🎯 <b>Key Levels:</b>
+⬆️ Resistance: ${tp1:,.4f}
+📍 Entry zone: ${entry:,.4f}
+⬇️ Support/SL: ${sl:,.4f}
+{zones_text}
+
+🌍 <b>Macro:</b> {macro['notes'][0] if macro['notes'] else 'N/A'}
+
+⏰ {datetime.now().strftime('%d/%m %H:%M')} WIB
+<i>4H Candle Close Update</i>"""
+
+    return send_telegram(msg.strip())
+
+
 def scan_market():
     """Main scanning function"""
     print(f"\n{'='*50}")
@@ -1349,8 +1413,13 @@ def scan_market():
         
         tf_summary = ' | '.join([f"{tf}:{results[tf]['bias']}({results[tf]['confidence']}%)" for tf in results])
         print(f"  {symbol}: {tf_summary} | Weekly:{weekly['bias']}")
+
+        # Selalu kirim market update per pair (kondisi terkini)
+        primary_tf_update = '4h' if '4h' in results else list(results.keys())[0]
+        send_market_update_per_pair(symbol, results[primary_tf_update], weekly, macro)
+        time.sleep(0.5)
         
-        # Strong signal: 2+ TF aligned (including weekly)
+        # Strong signal: 2+ TF aligned (including weekly) → kirim entry signal
         if bull_count >= 2 or bear_count >= 2:
             # Gunakan 4H result sebagai primary (KJO sering pakai 4H untuk entry)
             primary_tf = '4h' if '4h' in results else list(results.keys())[0]
@@ -1441,28 +1510,47 @@ def main():
     print("Macro: BTC Dom + USDT Dom + TOTAL3 + ETH/BTC Ratio")
     
     send_telegram(
-        "🤖 <b>KJO Signal Bot v2 aktif!</b>\n\n"
-        "Scanning market setiap 15 menit...\n"
-        "Method: KJO Academy Full — MA(7/25/99/200 SMA), MACD(12,26,9), RSI(14), Stoch(14,3,3)\n"
-        "Patterns: Double B/T, D/S Zone, Order Block, Triangle, H&S, Accumulation\n"
-        "Structure: HH/HL, Fake Breakout Filter, Volume Profile\n"
-        "Macro: BTC Dom + USDT Dom + TOTAL3 + ETH/BTC Ratio\n"
-        "📡 <b>NEW:</b> Funding Rate + Open Interest sebagai info tambahan tiap signal"
+        "🤖 <b>KJO Signal Bot v3 aktif!</b>\n\n"
+        "⏰ Scan: <b>Tiap 4H Candle Close</b> (01:00, 05:00, 09:00, 13:00, 17:00, 21:00 WIB)\n\n"
+        "📊 <b>Market Update</b> — tiap candle close, kondisi terkini semua pair\n"
+        "🎯 <b>Entry Signal</b> — kalau ada setup valid (multi-TF aligned)\n"
+        "📡 <b>Funding Rate + OI</b> — info tambahan di tiap signal\n\n"
+        "Method: KJO Academy Full — MA(7/25/99/200), MACD, RSI, Stoch\n"
+        "Patterns: Double B/T, D/S Zone, OB, Triangle, H&S, Accumulation\n"
+        "Macro: BTC Dom + USDT Dom + TOTAL3 + ETH/BTC Ratio"
     )
     
-    last_summary = 0
-    summary_interval = 14400  # 4 jam
+    last_scan_hour = -1  # track jam scan terakhir
     
     while True:
         try:
-            scan_market()
+            now = datetime.now()
             
-            if time.time() - last_summary > summary_interval:
-                send_market_summary()
-                last_summary = time.time()
+            # Cek apakah ini window 4H candle close
+            if is_4h_candle_close():
+                current_slot = now.hour  # slot jam ini
+                
+                # Pastikan belum scan di slot jam yang sama
+                if current_slot != last_scan_hour:
+                    print(f"\n⏰ 4H Candle Close! Jam {now.strftime('%H:%M')} WIB — Scanning...")
+                    scan_market()
+                    last_scan_hour = current_slot
+                else:
+                    print(f"  [{now.strftime('%H:%M')}] Sudah scan slot ini, skip.")
+            else:
+                # Di luar window — hitung berapa menit lagi
+                next_close = None
+                for h in CANDLE_4H_CLOSE_HOURS_WIB:
+                    if h > now.hour or (h == now.hour and now.minute < SCAN_WINDOW_MINUTES):
+                        next_close = h
+                        break
+                if next_close is None:
+                    next_close = CANDLE_4H_CLOSE_HOURS_WIB[0] + 24  # besok
+                
+                mins_left = (next_close - now.hour) * 60 - now.minute
+                print(f"  [{now.strftime('%H:%M')}] Waiting for 4H close... ~{mins_left}m lagi (jam {next_close:02d}:00 WIB)")
             
-            print(f"Next scan in {SCAN_INTERVAL}s...")
-            time.sleep(SCAN_INTERVAL)
+            time.sleep(SCAN_INTERVAL)  # cek tiap 1 menit
             
         except KeyboardInterrupt:
             print("\nBot stopped.")
