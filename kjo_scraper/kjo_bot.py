@@ -885,6 +885,34 @@ def get_market_sentiment(symbol):
     except Exception as e:
         result['warnings'].append(f"📊 OI: N/A")
 
+    # ---- SL Cluster Zone (dari swing high/low OHLCV) ----
+    try:
+        ohlcv = exchange.fetch_ohlcv(base.replace('USDT', '/USDT'), '4h', limit=50)
+        if ohlcv and len(ohlcv) >= 10:
+            highs = [c[2] for c in ohlcv[-20:]]
+            lows  = [c[3] for c in ohlcv[-20:]]
+            curr_price = ohlcv[-1][4]
+
+            # Swing Low = minimum dari 20 candle terakhir
+            swing_low = min(lows)
+            # Swing High = maximum dari 20 candle terakhir
+            swing_high = max(highs)
+
+            low_dist_pct = abs(curr_price - swing_low) / curr_price * 100
+            high_dist_pct = abs(swing_high - curr_price) / curr_price * 100
+
+            sl_cluster_text = f"📍 SL Cluster Zone:\n"
+            sl_cluster_text += f"  ⬇️ Bawah: ${swing_low:,.2f} ({low_dist_pct:.1f}% dari harga)"
+            if low_dist_pct < 3:
+                sl_cluster_text += " ⚠️ DEKAT!"
+            sl_cluster_text += f"\n  ⬆️ Atas: ${swing_high:,.2f} ({high_dist_pct:.1f}% dari harga)"
+            if high_dist_pct < 3:
+                sl_cluster_text += " ⚠️ DEKAT!"
+
+            result['warnings'].append(sl_cluster_text)
+    except Exception:
+        pass
+
     # ---- Long/Short Ratio ----
     try:
         resp_ls = requests.get(
