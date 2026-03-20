@@ -1332,7 +1332,29 @@ def format_signal(result, macro, weekly=None, sentiment=None):
     
     # Top signals (max 5)
     top_signals = result['signals'][:6]
-    
+
+    # Hitung % SL dan TP dari entry
+    entry_price = result['entry']
+    sl_price = result['sl']
+    tp1_price = result['tp1']
+    tp2_price = result['tp2']
+    tp3_price = result['tp3']
+
+    if bias == 'BULLISH':
+        sl_pct  = abs(entry_price - sl_price)  / entry_price * 100
+        tp1_pct = abs(tp1_price  - entry_price) / entry_price * 100
+        tp2_pct = abs(tp2_price  - entry_price) / entry_price * 100
+        tp3_pct = abs(tp3_price  - entry_price) / entry_price * 100
+        rr1 = tp1_pct / sl_pct if sl_pct else 0
+        rr3 = tp3_pct / sl_pct if sl_pct else 0
+    else:
+        sl_pct  = abs(sl_price  - entry_price) / entry_price * 100
+        tp1_pct = abs(entry_price - tp1_price) / entry_price * 100
+        tp2_pct = abs(entry_price - tp2_price) / entry_price * 100
+        tp3_pct = abs(entry_price - tp3_price) / entry_price * 100
+        rr1 = tp1_pct / sl_pct if sl_pct else 0
+        rr3 = tp3_pct / sl_pct if sl_pct else 0
+
     msg = f"""
 {emoji} <b>KJO SIGNAL — {symbol}/USDT</b>
 ━━━━━━━━━━━━━━━━━━━━━━
@@ -1342,11 +1364,11 @@ def format_signal(result, macro, weekly=None, sentiment=None):
 💪 <b>Confidence:</b> {conf}% (Bull:{result['bull_score']} Bear:{result['bear_score']})
 
 💰 <b>Price:</b> ${price:,.4f}
-🎯 <b>Entry:</b> ${result['entry']:,.4f}
-🛑 <b>SL:</b> ${result['sl']:,.4f}
-✅ <b>TP1:</b> ${result['tp1']:,.4f}
-✅ <b>TP2:</b> ${result['tp2']:,.4f}
-✅ <b>TP3:</b> ${result['tp3']:,.4f}
+🎯 <b>Entry:</b> ${entry_price:,.4f}
+🛑 <b>SL:</b> ${sl_price:,.4f} (-{sl_pct:.2f}%)
+✅ <b>TP1:</b> ${tp1_price:,.4f} (+{tp1_pct:.2f}%) | RR 1:{rr1:.1f}
+✅ <b>TP2:</b> ${tp2_price:,.4f} (+{tp2_pct:.2f}%)
+✅ <b>TP3:</b> ${tp3_price:,.4f} (+{tp3_pct:.2f}%) | RR 1:{rr3:.1f}
 {ms_text}{patterns_text}{zones_text}{vp_text}
 
 📋 <b>Signals:</b>
